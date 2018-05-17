@@ -1,6 +1,7 @@
 Part 2 - Defenses
 
-1. 
+1. To prevent attacker from injesting script into html, we
+- do not allow special characters in username input, only allow numbers, letters and underscore
 
 2. To prevent CSRF attack, we 
 - generate a secret token upon user login and user registration using generateRandomness()
@@ -17,6 +18,11 @@ Note that methods to prevent cookie tampering in part 3 and 4 work collaborately
 
 4. Same as 3.
 
-5. 
+5. To prevent attacker from injesting script into SQL, we
+- do not allow special characters in input username, only allow numbers, letters and underscore.
+- avoid casting user input into sql query, use prepared statements for all database queries.
 
-6. 
+
+6. To prevent from profile worm, we
+- set up a black list for dangerous html tags,
+- any attempt to input tags in the blacklist will be rejected.
