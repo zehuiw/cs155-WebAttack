@@ -6,6 +6,7 @@ import { generateRandomness, HMAC, KDF, checkPassword } from './utils/crypto';
 
 const router = express.Router();
 const dbPromise = sqlite.open('./db/database.sqlite', { cached: true });
+const hmac_key = generateRandomness();
 
 function render(req, res, next, page, title, errorMsg = false, result = null) {
   res.render(
@@ -18,14 +19,6 @@ function render(req, res, next, page, title, errorMsg = false, result = null) {
       result,
     }
   );
-  // logDatabaseState();
-}
-
-async function logDatabaseState() {
-  const db = await dbPromise;
-  const query = `SELECT * FROM Users`;
-  const result = await db.all(query);
-  console.log(result);
 }
 
 
@@ -66,14 +59,14 @@ router.get('/login', (req, res, next) => {
 
 router.post('/post_login', asyncMiddleware(async (req, res, next) => {
   const db = await dbPromise;
-  const query = `SELECT * FROM Users WHERE username == "${req.body.username}";`;
-  const result = await db.get(query);
+  const query = `SELECT * FROM Users WHERE username == ?;`;
+  const result = await db.get(query, req.body.username);
   if(result) { // if this username actually exists
     if(checkPassword(req.body.password, result)) { // if password is valid
       req.session.loggedIn = true;
       req.session.account = result;
-      ///////////////
       req.session.token = generateRandomness();
+      req.session.hmac = HMAC(hmac_key, req.session.loggedIn + JSON.stringify(req.session.account) + req.session.token);
       render(req, res, next, 'login/success', 'Bitbar Home');
       return;
     }
@@ -98,11 +91,8 @@ router.post('/post_register', asyncMiddleware(async (req, res, next) => {
     render(req, res, next, 'register/form', 'Register', 'Username can only contain letters, numbers or underscore!');
       return;
   }
-
-  // let query = `SELECT * FROM Users WHERE username == "${req.body.username}";`;
-  let query = `SELECT * FROM Users WHERE username == "${inputName}";`;
-
-  let result = await db.get(query);
+  let query = `SELECT * FROM Users WHERE username == ?;`;
+  let result = await db.get(query, req.body.username);
   if(result) { // query returns results
 
     if(result.username === req.body.username) { // if username exists
@@ -122,6 +112,8 @@ router.post('/post_register', asyncMiddleware(async (req, res, next) => {
     profile: '',
     bitbars: 100,
   };
+  req.session.token = generateRandomness();
+  req.session.hmac = HMAC(hmac_key, req.session.loggedIn + JSON.stringify(req.session.account) + req.session.token);
   render(req, res, next,'register/success', 'Bitbar Home');
 }));
 
@@ -132,10 +124,15 @@ router.get('/close', asyncMiddleware(async (req, res, next) => {
     return;
   };
   const db = await dbPromise;
-  const query = `DELETE FROM Users WHERE username == "${req.session.account.username}";`;
-  await db.get(query);
+  // const query = `DELETE FROM Users WHERE username == "${req.session.account.username}";`;
+  // await db.get(query);
+  let query = `DELETE FROM Users WHERE username == ?;`;
+  await db.run(query, req.session.account.username);
+
   req.session.loggedIn = false;
   req.session.account = {};
+  delete req.session.token;
+  delete req.session.hmac;
   render(req, res, next, 'index', 'Bitbar Home', 'Deleted account successfully!');
 }));
 
@@ -143,6 +140,8 @@ router.get('/close', asyncMiddleware(async (req, res, next) => {
 router.get('/logout', (req, res, next) => {
   req.session.loggedIn = false;
   req.session.account = {};
+  delete req.session.token;
+  delete req.session.hmac;
   render(req, res, next, 'index', 'Bitbar Home', 'Logged out successfully!');
 });
 
@@ -162,10 +161,10 @@ router.get('/profile', asyncMiddleware(async (req, res, next) => {
       return;
     }
     const db = await dbPromise;
-    const query = `SELECT * FROM Users WHERE username == "${req.query.username}";`;
+    const query = `SELECT * FROM Users WHERE username == ?;`;
     let result;
     try {
-      result = await db.get(query);
+      result = await db.get(query, req.query.username);
     } catch(err) {
       result = false;
     }
@@ -186,44 +185,54 @@ router.get('/transfer', (req, res, next) => {
     render(req, res, next, 'login/form', 'Login', 'You must be logged in to use this feature!');
     return;
   };
-  render(req, res, next, 'transfer/form', 'Transfer Bitbars', false, {receiver:null, amount:null});
+  render(req, res, next, 'transfer/form', 'Transfer Bitbars', false, {receiver:null, amount:null, token:req.session.token});
 });
 
 
 router.post('/post_transfer', asyncMiddleware(async(req, res, next) => {
-  // if(!req.headers.referer){
-  //   render(req, res, next, 'transfer/form', 'Transfer Bitbars', 'Who send this message?', {receiver:null, amount:null});
-  //   return;
-  // }
   if(req.session.loggedIn == false) {
     render(req, res, next, 'login/form', 'Login', 'You must be logged in to use this feature!');
     return;
   };
 
+  const hmac = HMAC(hmac_key, req.session.loggedIn + JSON.stringify(req.session.account) + req.session.token);
+  if (hmac !== req.session.hmac || req.session.token !== req.body.token) {
+    console.log("hmac or token doens't match");
+    req.session.loggedIn = false;
+    req.session.account = {};
+    delete req.session.token;
+    delete req.session.hmac;
+    render(req, res, next, 'login/form', 'Login', 'You are logged out because there seems to be an security issue. Please try login again.');
+    return;
+  }
+
   if(req.body.destination_username === req.session.account.username) {
-    render(req, res, next, 'transfer/form', 'Transfer Bitbars', 'You cannot send money to yourself!', {receiver:null, amount:null});
+    render(req, res, next, 'transfer/form', 'Transfer Bitbars', 'You cannot send money to yourself!', {receiver:null, amount:null, token:req.session.token});
     return;
   }
 
   const db = await dbPromise;
-  let query = `SELECT * FROM Users WHERE username == "${req.body.destination_username}";`;
-  const receiver = await db.get(query);
+  let query = `SELECT * FROM Users WHERE username == ?;`;
+  const receiver = await db.get(query, req.body.destination_username);
   if(receiver) { // if user exists
     const amount = parseInt(req.body.quantity);
     if(Number.isNaN(amount) || amount > req.session.account.bitbars || amount < 1) {
-      render(req, res, next, 'transfer/form', 'Transfer Bitbars', 'Invalid transfer amount!', {receiver:null, amount:null});
+      render(req, res, next, 'transfer/form', 'Transfer Bitbars', 'Invalid transfer amount!', {receiver:null, amount:null, token:req.session.token});
       return;
     }
 
     req.session.account.bitbars -= amount;
-    query = `UPDATE Users SET bitbars = "${req.session.account.bitbars}" WHERE username == "${req.session.account.username}";`;
-    await db.exec(query);
+    query = `UPDATE Users SET bitbars = ? WHERE username == ?;`;
+    await db.exec(query, [req.session.account.bitbars, req.session.account.username]);
     const receiverNewBal = receiver.bitbars + amount;
-    query = `UPDATE Users SET bitbars = "${receiverNewBal}" WHERE username == "${receiver.username}";`;
-    await db.exec(query);
+    query = `UPDATE Users SET bitbars = ? WHERE username == ?;`;
+    await db.exec(query, [receiverNewBal, receiver.username]);
+
+    req.session.hmac = HMAC(hmac_key, req.session.loggedIn + JSON.stringify(req.session.account) + req.session.token);
+
     render(req, res, next, 'transfer/success', 'Transfer Complete', false, {receiver, amount});
   } else { // user does not exist
-    render(req, res, next, 'transfer/form', 'Transfer Bitbars', 'This user does not exist!', {receiver:null, amount:null});
+    render(req, res, next, 'transfer/form', 'Transfer Bitbars', 'This user does not exist!', {receiver:null, amount:null, token:req.session.token});
   }
 }));
 
