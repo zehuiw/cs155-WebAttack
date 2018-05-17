@@ -30,7 +30,7 @@ router.get('/', (req, res, next) => {
 router.post('/set_profile', asyncMiddleware(async (req, res, next) => {
   var blackList = ["script", "iframe", "form", "object", "embed", "link", "head", "meta", "body"];
   for(var i = 0; i < blackList.length; i++){
-    var str = "<" + blackList[i] + " *>";
+    var str = "<" + blackList[i] + "[^]*>";
     var reg = new RegExp(str);
     console.log(req.body.new_profile.match(reg));
     if(req.body.new_profile.match(reg) != null){
