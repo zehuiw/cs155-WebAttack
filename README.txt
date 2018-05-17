@@ -7,9 +7,10 @@ Part 2 - Defenses
 - generate a secret token upon user login and user registration using generateRandomness()
 - store this secret token in cookie session.token
 - add hidden field with secret token in transfer form form.ejs
-- unpon receiving transfer request, server verifies the form submission token parameter is the same as the session.token
-Note that methods to prevent cookie tampering in part 3 and 4 work collaborately with this defense.
+- unpon receiving transfer request, server verifies the form submission token parameter is the same as the session.token. If not, logout and display a friendly error message.
 (for logout and close we delete session.token)
+
+Note that methods to prevent cookie tampering in part 3 and 4 work collaborately with this defense.
 
 3. To ensure cookie integrity, we
 - generate an hmac key at the start of the server using generateRandomness()
@@ -20,9 +21,9 @@ Note that methods to prevent cookie tampering in part 3 and 4 work collaborately
 
 5. To prevent attacker from injesting script into SQL, we
 - do not allow special characters in input username, only allow numbers, letters and underscore.
-- avoid casting user input into sql query, use prepared statements for all database queries.
+- avoid casting user input into sql query directly. Use prepared statements instead for all database queries.
 
 
 6. To prevent from profile worm, we
 - set up a black list for dangerous html tags,
-- any attempt to input tags in the blacklist will be rejected.
+- any attempt to input tags in the blacklist will be rejected. Error message will be displayed.
